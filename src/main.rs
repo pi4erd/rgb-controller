@@ -1,9 +1,11 @@
+mod config;
 mod presets;
 mod shared;
 
+use config::Configuration;
 use openrgb::{data::Color, OpenRGB};
-use std::{error::Error, process::exit, time::Duration};
 use presets::PixelFunction;
+use std::{error::Error, process::exit, time::Duration};
 
 macro_rules! load_presets {
     ($($name:ident $(,)?)+) => {
@@ -27,9 +29,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // let controller_id = force_input_int("Enter controlled id (e.g. 0): ") as u32;
 
-    const CONTROLLER_ID: u32 = 2;
+    let config = Configuration {
+        controller_id: 2,
+        selected_mode: 0,
+    };
 
-    let controller = client.get_controller(CONTROLLER_ID).await?;
+    let controller = client.get_controller(config.controller_id as u32).await?;
     let led_count = controller.leds.len();
 
     println!(
@@ -39,30 +44,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut screen = vec![Color::new(0, 0, 0); led_count];
 
-    let mut modes = load_presets! [
-        DefaultBlinks,
-    ];
+    let mut modes = load_presets![DefaultBlinks,];
 
     println!("Available modes:");
     for (idx, mode) in modes.iter().enumerate() {
         println!("- [{}] {}", idx, mode)
     }
 
-    let selected: usize = 0;
-
     println!(
         "Selected mode '{}' with ID {}",
-        modes[selected].name(),
-        selected
+        modes[config.selected_mode].name(),
+        config.selected_mode
     );
 
-    modes[selected].init();
+    modes[config.selected_mode].init();
 
     loop {
-        modes[selected].update(&mut screen);
+        modes[config.selected_mode].update(&mut screen);
 
         client
-            .update_leds(CONTROLLER_ID, screen.clone())
+            .update_leds(config.controller_id as u32, screen.clone())
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_nanos(10_000_000)).await;
