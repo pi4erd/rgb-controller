@@ -526,6 +526,7 @@ dependencies = [
  "openrgb",
  "pretty_env_logger",
  "rand",
+ "serde",
  "tokio",
  "toml",
 ]

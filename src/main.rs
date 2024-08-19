@@ -5,6 +5,7 @@ mod shared;
 use configuration::{Configuration, ConfigurationError};
 use openrgb::{data::Color, OpenRGB};
 use presets::PixelFunction;
+use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
     fs::File,
@@ -25,12 +26,6 @@ macro_rules! load_presets {
 }
 
 const APP_NAME: &'static str = env!("CARGO_CRATE_NAME");
-
-fn default_config() -> &'static str {
-    "controller_id = 2
-selected_mode = 0
-"
-}
 
 fn setup_config() -> Result<Configuration, Box<dyn Error>> {
     let config_path_str: &str = &format!(
@@ -62,14 +57,20 @@ fn setup_config() -> Result<Configuration, Box<dyn Error>> {
         let mut buffer = String::new();
         config_file.read_to_string(&mut buffer)?;
 
-        settings = Configuration::deserialize(&buffer)?;
+        settings = Configuration::deserialize(toml::Deserializer::new(&buffer))?;
     } else {
         let mut config_file = File::create(config_path)?;
-        config_file.write_all(default_config().as_bytes())?;
+        
+        let default_config = Configuration::default();
+        
+        let mut default_config_string = String::new();
+        default_config.serialize(toml::Serializer::new(&mut default_config_string))?;
+        
+        config_file.write_all(default_config_string.as_bytes())?;
 
         log::info!("Created config file at {}", config_path.to_str().unwrap());
 
-        settings = Configuration::deserialize(default_config())?;
+        settings = default_config;
     }
 
     return Ok(settings);
@@ -86,7 +87,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     pretty_env_logger::init();
 
     let settings = setup_config()?;
-    
+
     log::info!("Loaded configuration successfully.");
 
     let client = OpenRGB::connect().await?;
