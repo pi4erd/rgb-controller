@@ -12,6 +12,10 @@ To build:
 - `cd rgb-controller` and `cargo build --release`
 - Everything should be compiled in `target/release` directory
 
+Additionally, you can install this directly to the /usr/local/bin/ directory
+by using `install.sh` script. Works only for POSIX systems and tested only
+on Arch.
+
 ## Support
 
 App was tested only in Arch Linux so no support for other OSs.
