@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display};
+use std::{collections::HashMap, error::Error, fmt::Display};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConfigurationError(pub &'static str);
@@ -10,8 +10,32 @@ impl Display for ConfigurationError {
     }
 }
 
+pub const CURRENT_FORMAT_VERSION: usize = 1;
+
 #[derive(serde::Deserialize, serde::Serialize, Default)]
-pub struct Configuration {
+pub struct ControllerConfig {
+    #[serde(default)]
     pub controller_id: usize,
+    #[serde(default)]
     pub selected_mode: usize,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+pub struct Configuration {
+    #[serde(default = "current_version")]
+    pub version: usize,
+    pub controller_configs: HashMap<String, ControllerConfig>,
+}
+
+fn current_version() -> usize {
+    CURRENT_FORMAT_VERSION
+}
+
+impl Default for Configuration {
+    fn default() -> Self {
+        Self {
+            version: current_version(),
+            controller_configs: HashMap::default(),
+        }
+    }
 }

@@ -1,11 +1,20 @@
 mod default_blinks;
+mod cycling;
 
+use openrgb::data::Color;
 use std::fmt::Display;
 
 pub use default_blinks::DefaultBlinks;
-use openrgb::data::Color;
+pub use cycling::Cycling;
 
-pub trait PixelFunction {
+pub fn all_presets() -> Vec<Box<dyn PixelFunction>> {
+    vec![
+        Box::new(DefaultBlinks::default()),
+        Box::new(Cycling::default()),
+    ]
+}
+
+pub trait PixelFunction: Send + 'static {
     fn init(&mut self);
     fn name(&self) -> &'static str {
         "Unnamed"
