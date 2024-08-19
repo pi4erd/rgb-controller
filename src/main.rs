@@ -1,11 +1,18 @@
-mod config;
+mod configuration;
 mod presets;
 mod shared;
 
-use config::Configuration;
+use configuration::{Configuration, ConfigurationError};
 use openrgb::{data::Color, OpenRGB};
 use presets::PixelFunction;
-use std::{error::Error, process::exit, time::Duration};
+use std::{
+    error::Error,
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+    process::exit,
+    time::Duration,
+};
 
 macro_rules! load_presets {
     ($($name:ident $(,)?)+) => {
@@ -17,53 +24,111 @@ macro_rules! load_presets {
     };
 }
 
+const APP_NAME: &'static str = env!("CARGO_CRATE_NAME");
+
+fn default_config() -> &'static str {
+    "controller_id = 2
+selected_mode = 0
+"
+}
+
+fn setup_config() -> Result<Configuration, Box<dyn Error>> {
+    let config_path_str: &str = &format!(
+        "{}/{}/config.toml",
+        dirs::config_dir()
+            .ok_or(ConfigurationError("Config directory unavailable"))?
+            .to_str()
+            .unwrap(),
+        APP_NAME
+    );
+
+    let settings: Configuration;
+
+    let config_path = Path::new(config_path_str);
+
+    log::trace!("Config file at {}", config_path_str);
+
+    let config_dir = config_path.parent().unwrap();
+
+    log::trace!("Config dir at {}", config_dir.to_str().unwrap());
+
+    if !config_dir.exists() {
+        std::fs::create_dir(config_dir)?;
+    }
+
+    if config_path.exists() {
+        let mut config_file = File::open(config_path)?;
+
+        let mut buffer = String::new();
+        config_file.read_to_string(&mut buffer)?;
+
+        settings = Configuration::deserialize(&buffer)?;
+    } else {
+        let mut config_file = File::create(config_path)?;
+        config_file.write_all(default_config().as_bytes())?;
+
+        log::info!("Created config file at {}", config_path.to_str().unwrap());
+
+        settings = Configuration::deserialize(default_config())?;
+    }
+
+    return Ok(settings);
+}
+
+/*
+    App flow:
+    Load config -> Connect -> Select controller ->
+    -> Select mode -> Display
+*/
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    pretty_env_logger::init();
+
+    let settings = setup_config()?;
+    
+    log::info!("Loaded configuration successfully.");
+
     let client = OpenRGB::connect().await?;
 
     ctrlc::set_handler(|| {
-        println!("Stopping...");
+        log::info!("Stopping...");
         exit(0);
     })
     .expect("Error setting CTRL-C as handler");
 
-    // let controller_id = force_input_int("Enter controlled id (e.g. 0): ") as u32;
-
-    let config = Configuration {
-        controller_id: 2,
-        selected_mode: 0,
-    };
-
-    let controller = client.get_controller(config.controller_id as u32).await?;
+    let controller = client.get_controller(settings.controller_id as u32).await?;
     let led_count = controller.leds.len();
 
-    println!(
-        "Running {} leds on controller {}.",
-        led_count, controller.name
+    log::info!(
+        "Running {} leds on controller {} (ID {}).",
+        led_count,
+        controller.name,
+        settings.controller_id
     );
 
     let mut screen = vec![Color::new(0, 0, 0); led_count];
 
     let mut modes = load_presets![DefaultBlinks,];
 
-    println!("Available modes:");
+    log::info!("Available modes:");
     for (idx, mode) in modes.iter().enumerate() {
-        println!("- [{}] {}", idx, mode)
+        log::info!("- [{}] {}", idx, mode)
     }
 
-    println!(
+    log::info!(
         "Selected mode '{}' with ID {}",
-        modes[config.selected_mode].name(),
-        config.selected_mode
+        modes[settings.selected_mode].name(),
+        settings.selected_mode
     );
 
-    modes[config.selected_mode].init();
+    modes[settings.selected_mode].init();
 
     loop {
-        modes[config.selected_mode].update(&mut screen);
+        modes[settings.selected_mode].update(&mut screen);
 
         client
-            .update_leds(config.controller_id as u32, screen.clone())
+            .update_leds(settings.controller_id as u32, screen.clone())
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_nanos(10_000_000)).await;
