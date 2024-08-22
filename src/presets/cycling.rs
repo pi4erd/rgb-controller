@@ -2,7 +2,7 @@ use openrgb::data::Color;
 
 use crate::shared::*;
 
-use super::PixelFunction;
+use super::{FunctionConfig, PixelFunction};
 
 pub struct Cycling {
     colors: [Color; Self::POINT_COUNT],
@@ -21,7 +21,7 @@ impl Default for Cycling {
 }
 
 impl PixelFunction for Cycling {
-    fn init(&mut self) {
+    fn init(&mut self, config: &FunctionConfig) {
         for i in 0..self.colors.len() {
             let (r, g, b) = hsv::hsv_to_rgb(
                 mapf01(i as f64, 0.0, (self.colors.len() - 1) as f64) * 360.0,

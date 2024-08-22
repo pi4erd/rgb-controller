@@ -3,7 +3,7 @@ use rand::{rngs::OsRng, Rng};
 
 use crate::shared::*;
 
-use super::PixelFunction;
+use super::{FunctionConfig, PixelFunction};
 
 pub struct DefaultBlinks {
     colors: [Color; Self::POINT_COUNT],
@@ -27,7 +27,7 @@ impl Default for DefaultBlinks {
 }
 
 impl PixelFunction for DefaultBlinks {
-    fn init(&mut self) {
+    fn init(&mut self, config: &FunctionConfig) {
         for i in 0..self.colors.len() {
             let (r, g, b) = hsv::hsv_to_rgb(
                 mapf01(i as f64, 0.0, (self.colors.len() - 1) as f64) * 360.0,

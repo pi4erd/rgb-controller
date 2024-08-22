@@ -4,7 +4,7 @@ mod shared;
 
 use configuration::{Configuration, ConfigurationError};
 use openrgb::{data::Color, OpenRGB};
-use presets::all_presets;
+use presets::{all_presets, FunctionConfig};
 use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
@@ -75,7 +75,7 @@ fn setup_config() -> Result<Configuration, Box<dyn Error>> {
 
 type OpenRGBClient = OpenRGB<tokio::net::TcpStream>;
 
-async fn run_preset(client: Arc<OpenRGBClient>, controller_id: u32, preset_id: usize) {
+async fn run_preset(client: Arc<OpenRGBClient>, controller_id: u32, preset_id: usize, config: FunctionConfig) {
     let controller = client.get_controller(controller_id).await.unwrap();
     let led_count = controller.leds.len();
 
@@ -98,7 +98,7 @@ async fn run_preset(client: Arc<OpenRGBClient>, controller_id: u32, preset_id: u
         controller_id
     );
 
-    modes[preset_id].init();
+    modes[preset_id].init(&config);
     loop {
         modes[preset_id].update(&mut screen);
 
@@ -110,6 +110,11 @@ async fn run_preset(client: Arc<OpenRGBClient>, controller_id: u32, preset_id: u
     }
 }
 
+fn quit() -> ! {
+    log::info!("Stopping...");
+    exit(0)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     pretty_env_logger::init();
@@ -118,9 +123,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     log::info!("Loaded configuration successfully.");
     
-    if settings.version != configuration::CURRENT_FORMAT_VERSION { 
+    if settings.format_info.version != configuration::CURRENT_FORMAT_VERSION { 
         log::warn!("Configuration is outdated (v{} > v{}). Some things might break!",
-            configuration::CURRENT_FORMAT_VERSION, settings.version
+            configuration::CURRENT_FORMAT_VERSION, settings.format_info.version
         )
     }
     
@@ -136,8 +141,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let client = Arc::new(OpenRGB::connect().await?); 
  
     ctrlc::set_handler(|| {
-        log::info!("Stopping...");
-        exit(0);
+        quit()
     })
     .expect("Error setting CTRL-C as handler");
     
@@ -147,7 +151,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let client = client.clone();
         
         tasks.push(tokio::spawn(async move {
-            run_preset(client, controller_config.controller_id as u32, controller_config.selected_mode).await
+            run_preset(
+                client,
+                controller_config.controller_id as u32,
+                controller_config.selected_mode,
+                controller_config.function_config,
+            ).await
         }));
     }
     
