@@ -1,7 +1,5 @@
 use std::{collections::HashMap, error::Error, fmt::Display};
 
-use crate::presets::FunctionConfig;
-
 #[derive(Debug, Clone, Copy)]
 pub struct ConfigurationError(pub &'static str);
 
@@ -21,13 +19,21 @@ pub struct ControllerConfig {
     #[serde(default)]
     pub selected_mode: usize,
     #[serde(default)]
-    pub function_config: FunctionConfig,
+    pub function_config: HashMap<String, toml::Value>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct FormatInfo {
     #[serde(default = "current_version")]
     pub version: usize,
+}
+
+impl Default for FormatInfo {
+    fn default() -> Self {
+        Self {
+            version: current_version(),
+        }
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]

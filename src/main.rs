@@ -4,10 +4,11 @@ mod shared;
 
 use configuration::{Configuration, ConfigurationError};
 use openrgb::{data::Color, OpenRGB};
-use presets::{all_presets, FunctionConfig};
+use presets::all_presets;
 use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
+    collections::HashMap,
     fs::File,
     io::{Read, Write},
     path::Path,
@@ -75,7 +76,7 @@ fn setup_config() -> Result<Configuration, Box<dyn Error>> {
 
 type OpenRGBClient = OpenRGB<tokio::net::TcpStream>;
 
-async fn run_preset(client: Arc<OpenRGBClient>, controller_id: u32, preset_id: usize, config: FunctionConfig) {
+async fn run_preset(client: Arc<OpenRGBClient>, controller_id: u32, preset_id: usize, config: HashMap<String, toml::Value>) {
     let controller = client.get_controller(controller_id).await.unwrap();
     let led_count = controller.leds.len();
 
@@ -118,7 +119,7 @@ fn quit() -> ! {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     pretty_env_logger::init();
-
+    
     let settings = setup_config()?;
 
     log::info!("Loaded configuration successfully.");
