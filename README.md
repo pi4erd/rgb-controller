@@ -26,4 +26,18 @@ Configuration is done in default configuration folder
 (`~/.config/rgb_controller/config.toml` for POSIX systems and
 `%AppData%/rgb_controller/config.toml` for Windows)
 
-TODO: Documentation on config options
+Example configuration:
+
+```toml
+# Format info, used to discern versions of configs
+[format_info]
+version = 2
+
+# Controller configs
+# Each config has a user-given name and has a few properties:
+# - controller_id (int) - id of the OpenRGB controller
+# - selected_mode (int) - selected preset from existing ones
+[controller_configs.my_config]
+controller_id = 0
+selected_mode = 1
+```
