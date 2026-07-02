@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use openrgb::data::Color;
-use rand::{rngs::OsRng, Rng};
+use rand::RngExt;
 
 use crate::shared::*;
 
@@ -10,7 +10,6 @@ use super::PixelFunction;
 pub struct DefaultBlinks {
     colors: [Color; Self::POINT_COUNT],
     delay_counter: usize,
-    rng: OsRng,
 }
 
 impl DefaultBlinks {
@@ -23,7 +22,6 @@ impl Default for DefaultBlinks {
         Self {
             colors: [Color::new(1, 0, 0); 360],
             delay_counter: Self::STAR_DELAY,
-            rng: OsRng {},
         }
     }
 }
@@ -31,7 +29,7 @@ impl Default for DefaultBlinks {
 impl PixelFunction for DefaultBlinks {
     fn init(&mut self, _config: &HashMap<String, toml::Value>) {
         for i in 0..self.colors.len() {
-            let (r, g, b) = hsv::hsv_to_rgb(
+            let (r, g, b) = hsv_to_rgb(
                 mapf01(i as f64, 0.0, (self.colors.len() - 1) as f64) * 360.0,
                 1.0,
                 0.5,
@@ -51,7 +49,7 @@ impl PixelFunction for DefaultBlinks {
 
         if self.delay_counter == 0 {
             self.delay_counter = Self::STAR_DELAY;
-            let gen_idx = self.rng.gen_range(0..screen.len());
+            let gen_idx = rand::rng().random_range(0..screen.len());
             screen[gen_idx] = invert_color(screen[gen_idx]);
         }
 

@@ -22,34 +22,19 @@ impl Default for Cycling {
     }
 }
 
-// macro_rules! config_value {
-//     ($config:expr, $name:ident, $typ:ty, $default:expr) => {
-//         let $name = {
-//             let tmp = $config.config_map.get(stringify!($name))
-//                 .unwrap_or(&$default);
-//             if let $typ(val) = tmp {
-//                 val
-//             } else {
-//                 panic!("Value for {} was of incorrect type ({})", stringify!($name), stringify!($typ))
-//             }
-//         };
-//     };
-// }
-
 impl PixelFunction for Cycling {
     fn init(&mut self, config: &HashMap<String, toml::Value>) {
         // TODO: Make this a macro somehow
-        let wheel_intensity = {
-            let tmp = config.get("wheel_intensity").unwrap_or(&toml::Value::Float(1.0));
-            if let toml::Value::Float(val) = tmp {
-                *val
-            } else {
-                panic!("Value for 'wheel_intensity' was of incorrect type.");
-            }
-        };
+        let wheel_intensity = config
+            .get("wheel_intensity")
+            .unwrap_or(&toml::Value::Float(1.0))
+            .as_float()
+            .expect("Invalid type for 'wheel_intensity'");
+
         for i in 0..self.colors.len() {
-            let (r, g, b) = hsv::hsv_to_rgb(
-                mapf01(i as f64, 0.0, (self.colors.len() - 1) as f64) * 360.0 * wheel_intensity % 360.0,
+            let (r, g, b) = hsv_to_rgb(
+                mapf01(i as f64, 0.0, (self.colors.len() - 1) as f64) * 360.0 * wheel_intensity
+                    % 360.0,
                 1.0,
                 0.5,
             );

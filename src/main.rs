@@ -1,47 +1,45 @@
 mod configuration;
+mod errors;
 mod presets;
 mod shared;
 
 use configuration::{Configuration, ConfigurationError};
-use openrgb::{data::Color, OpenRGB};
+use openrgb::{OpenRGB, data::Color};
 use presets::all_presets;
-use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 use std::{
-    error::Error,
     collections::HashMap,
+    error::Error,
     fs::File,
     io::{Read, Write},
-    path::Path,
     process::exit,
     sync::Arc,
     time::Duration,
 };
 
+use crate::errors::RunError;
+
 const APP_NAME: &'static str = env!("CARGO_CRATE_NAME");
 
+struct AppState {
+    running: bool,
+    client: OpenRGBClient,
+}
+
 fn setup_config() -> Result<Configuration, Box<dyn Error>> {
-    let config_path_str: &str = &format!(
-        "{}/{}/config.toml",
-        dirs::config_dir()
-            .ok_or(ConfigurationError("Config directory unavailable"))?
-            .to_str()
-            .unwrap(),
-        APP_NAME
-    );
+    // TODO: Configuration pathwalking,
+    // e.g. /etc/... -> ~/.config/... -> ~/.rgb-controller/config.toml
+    let config_dir = dirs::config_dir()
+        .ok_or(ConfigurationError("Config directory unavailable"))?;
+    if !config_dir.exists() {
+        std::fs::create_dir(&config_dir)?;
+    }
+
+    let config_path = config_dir.join(format!("{APP_NAME}/config.toml"));
 
     let settings: Configuration;
 
-    let config_path = Path::new(config_path_str);
-
-    log::trace!("Config file at {}", config_path_str);
-
-    let config_dir = config_path.parent().unwrap();
-
-    log::trace!("Config dir at {}", config_dir.to_str().unwrap());
-
-    if !config_dir.exists() {
-        std::fs::create_dir(config_dir)?;
-    }
+    log::trace!("Config file at {}", config_path.to_string_lossy());
 
     if config_path.exists() {
         let mut config_file = File::open(config_path)?;
@@ -49,18 +47,17 @@ fn setup_config() -> Result<Configuration, Box<dyn Error>> {
         let mut buffer = String::new();
         config_file.read_to_string(&mut buffer)?;
 
-        settings = Configuration::deserialize(toml::Deserializer::new(&buffer))?;
+        settings = toml::from_str(&buffer)?;
     } else {
-        let mut config_file = File::create(config_path)?;
+        let mut config_file = File::create(&config_path)?;
 
         let default_config = Configuration::default();
 
-        let mut default_config_string = String::new();
-        default_config.serialize(toml::Serializer::new(&mut default_config_string))?;
+        let default_config_string = toml::to_string(&default_config)?;
 
         config_file.write_all(default_config_string.as_bytes())?;
 
-        log::info!("Created config file at {}", config_path.to_str().unwrap());
+        log::info!("Created config file at {}", config_path.to_string_lossy());
 
         settings = default_config;
     }
@@ -76,8 +73,22 @@ fn setup_config() -> Result<Configuration, Box<dyn Error>> {
 
 type OpenRGBClient = OpenRGB<tokio::net::TcpStream>;
 
-async fn run_preset(client: Arc<OpenRGBClient>, controller_id: u32, preset_id: usize, config: HashMap<String, toml::Value>) {
-    let controller = client.get_controller(controller_id).await.unwrap();
+async fn run_preset(
+    state: Arc<Mutex<AppState>>,
+    controller_id: u32,
+    preset_id: usize,
+    config: HashMap<String, toml::Value>,
+) -> Result<(), RunError> {
+    let controller = {
+        let lock = state.lock().await;
+        lock.client
+            .get_controller(controller_id)
+            .await
+            .map_err(|e| RunError::OpenRGBError {
+                message: format!("Failed to get controller ID {controller_id}"),
+                error: e,
+            })?
+    };
     let led_count = controller.leds.len();
 
     let mut modes = all_presets();
@@ -103,67 +114,100 @@ async fn run_preset(client: Arc<OpenRGBClient>, controller_id: u32, preset_id: u
     loop {
         modes[preset_id].update(&mut screen);
 
-        client
-            .update_leds(controller_id as u32, screen.clone())
-            .await
-            .unwrap();
+        {
+            let lock = state.lock().await;
+            lock.client
+                .update_leds(controller_id as u32, screen.clone())
+                .await
+                .map_err(|e| RunError::OpenRGBError {
+                    message: format!("Failed to update LEDs for controller ID {controller_id}"),
+                    error: e,
+                })?;
+        }
+
         tokio::time::sleep(Duration::from_nanos(10_000_000)).await;
     }
 }
 
-fn quit() -> ! {
-    log::info!("Stopping...");
-    exit(0)
+fn request_quit(state: Arc<Mutex<AppState>>) {
+    state.blocking_lock().running = false;
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() {
     pretty_env_logger::init();
-    
-    let settings = setup_config()?;
+
+    let settings = setup_config().unwrap_or_else(|e| {
+        log::error!("Failed to load configuration: {}", e);
+        exit(1);
+    });
 
     log::info!("Loaded configuration successfully.");
-    
-    if settings.format_info.version != configuration::CURRENT_FORMAT_VERSION { 
-        log::warn!("Configuration is outdated (v{} > v{}). Some things might break!",
-            configuration::CURRENT_FORMAT_VERSION, settings.format_info.version
+
+    if settings.format_info.version != configuration::CURRENT_FORMAT_VERSION {
+        log::warn!(
+            "Configuration is outdated (v{} > v{}). Some things might break!",
+            configuration::CURRENT_FORMAT_VERSION,
+            settings.format_info.version
         )
     }
-    
+
     if settings.controller_configs.len() == 0 {
-        log::warn!("Controller configuration is empty! Refer to README.md for configuration guides.")
+        log::warn!(
+            "Controller configuration is empty! Refer to README.md for configuration guides."
+        )
     }
 
     log::info!("Available presets:");
     for (idx, preset) in all_presets().iter().enumerate() {
         log::info!("- ({}) {}", idx, preset.name())
     }
-    
-    let client = Arc::new(OpenRGB::connect().await?); 
- 
-    ctrlc::set_handler(|| {
-        quit()
-    })
-    .expect("Error setting CTRL-C as handler");
-    
+
+    let state = {
+        let client = OpenRGB::connect().await.unwrap_or_else(|e| {
+            log::error!("Failed to connect to OpenRGB server: {}", e);
+            exit(1);
+        });
+
+        Arc::new(Mutex::new(AppState {
+            client,
+            running: true,
+        }))
+    };
+
+    {
+        let state = state.clone();
+        ctrlc::set_handler(move || {
+            request_quit(state.clone());
+        })
+        .expect("Error setting CTRL-C as handler");
+    }
+
     let mut tasks = Vec::new();
-    
+
     for (_controller_name, controller_config) in settings.controller_configs {
-        let client = client.clone();
-        
+        let state = state.clone();
+
         tasks.push(tokio::spawn(async move {
             run_preset(
-                client,
+                state.clone(),
                 controller_config.controller_id as u32,
                 controller_config.selected_mode,
                 controller_config.function_config,
-            ).await
+            )
+            .await
         }));
     }
-    
-    for task in tasks {
-        task.await?;
+
+    for (idx, task) in tasks.into_iter().enumerate() {
+        let result = task.await.expect("Failed to join task");
+
+        match result {
+            Ok(()) => log::debug!("Task {idx} exited successfully."),
+            Err(e) => {
+                log::error!("Error occured during application runtime:");
+                log::error!("  {e}")
+            }
+        }
     }
-    
-    Ok(())
 }
